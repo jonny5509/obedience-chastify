@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Obedience for Chastify</title>
+<style>
+:root{color-scheme:light dark;font-family:system-ui,sans-serif}body{margin:0;padding:20px;background:Canvas;color:CanvasText}main{max-width:680px;margin:auto}h1{font-size:1.5rem}.field{display:grid;gap:6px;margin:14px 0}input,select,button{font:inherit;padding:10px;border-radius:8px}input,select{width:100%;box-sizing:border-box;border:1px solid #8888;background:Canvas;color:CanvasText}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}button{cursor:pointer;border:0;background:#6b4eff;color:white;font-weight:650}button:disabled{opacity:.5;cursor:wait}#status{padding:10px;border-radius:8px;background:color-mix(in srgb,CanvasText 8%,Canvas);white-space:pre-wrap}.muted{opacity:.75;font-size:.92rem}@media(max-width:520px){.grid{grid-template-columns:1fr}}
+</style></head>
+<body><main>
+<h1>Obedience → Chastify</h1>
+<p>Connect an Obedience reward to remove lock time and/or a punishment to add lock time. Events are queued while the extension is closed and processed when you open it with a valid Chastify session.</p>
+<p id="launchStatus" class="muted">Checking Chastify launch context…</p>
+<form id="settings">
+<h2>Obedience connection</h2>
+<div class="field"><label for="extensionId">Obedience extension ID</label><input id="extensionId" required autocomplete="off"></div>
+<div class="field"><label for="secret">Obedience extension secret</label><input id="secret" type="password" required autocomplete="off"></div>
+<button type="button" id="loadOptions">Load rewards and punishments</button>
+<div class="grid"><section><h2>Reward</h2>
+<div class="field"><label for="reward">Reward to connect</label><select id="reward"><option value="">Disabled</option></select></div>
+<div class="field"><label for="rewardMinutes">Minutes to remove per reward</label><input id="rewardMinutes" type="number" min="0" max="525600" step="1" value="5"></div>
+</section><section><h2>Punishment</h2>
+<div class="field"><label for="punishment">Punishment to connect</label><select id="punishment"><option value="">Disabled</option></select></div>
+<div class="field"><label for="punishmentMinutes">Minutes to add per punishment</label><input id="punishmentMinutes" type="number" min="0" max="525600" step="1" value="10"></div>
+</section></div><button type="submit" id="save">Save and connect</button>
+</form>
+<h2>Pending actions</h2><p class="muted">Opening this extension syncs queued events. If Chastify rejects an action or the network times out, check the lock history before retrying; time changes are not automatically repeated.</p>
+<button type="button" id="sync">Sync pending actions now</button>
+<p id="status" role="status">Ready.</p>
+</main>
+<script>
+(() => {
+ const $ = id => document.getElementById(id);
+ let launch = null;
+ function decodeLaunch() {
+   const hash = location.hash.replace(/^#/, "");
+   const params = new URLSearchParams(hash);
+   let raw = params.get("payload") || params.get("launch") || params.get("data");
+   if (!raw && hash.startsWith("{")) raw = hash;
+   if (!raw) return null;
+   try { return JSON.parse(raw); } catch (_) {}
+   try { const normalized = raw.replace(/-/g, "+").replace(/_/g, "/"); return JSON.parse(decodeURIComponent(escape(atob(normalized)))); } catch (_) { return null; }
+ }
+ function status(message) { $("status").textContent = message; }
+ function authBody() {
+   if (!launch || !launch.sessionId || !launch.mainToken) throw new Error("Open this page from inside an installed Chastify extension. Launch context was not found.");
+   return { sessionId: launch.sessionId, mainToken: launch.mainToken };
+ }
+ async function api(path, data) {
+   const response = await fetch(path, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({...authBody(),...data}) });
+   const result = await response.json().catch(() => ({}));
+   if (!response.ok) throw new Error(result.error || "Request failed.");
+   return result;
+ }
+ function fillSelect(id, items) {
+   const select = $(id); select.replaceChildren(new Option("Disabled", ""));
+   for (const item of items) select.add(new Option(item.name || item.id, item.id));
+ }
+ launch = decodeLaunch();
+ $("launchStatus").textContent = launch && launch.sessionId && launch.mainToken ? "Chastify launch context found. Open this extension from an active lock." : "No launch context found. Open this page from inside Chastify to configure it.";
+ if (!launch || !launch.sessionId || !launch.mainToken) {
+   $("settings").querySelectorAll("input,select,button").forEach(el => el.disabled = true); $("sync").disabled = true;
+ }
+ $("loadOptions").addEventListener("click", async () => {
+   try {
+     status("Loading Obedience options…");
+     const result = await api("/api/obedience/options", {obedienceExtensionId:$("extensionId").value.trim(),obedienceSecret:$("secret").value});
+     fillSelect("reward",result.rewards||[]); fillSelect("punishment",result.punishments||[]);
+     status("Loaded "+(result.rewards||[]).length+" rewards and "+(result.punishments||[]).length+" punishments.");
+   } catch(error) { status(error.message); }
+ });
+ $("settings").addEventListener("submit", async event => {
+   event.preventDefault();
+   try {
+     $("save").disabled = true;
+     const result = await api("/api/configure", {
+       obedienceExtensionId:$("extensionId").value.trim(), obedienceSecret:$("secret").value,
+       rewardId:$("reward").value, rewardMinutes:Number($("rewardMinutes").value),
+       punishmentId:$("punishment").value, punishmentMinutes:Number($("punishmentMinutes").value)
+     });
+     status(result.message || "Saved."); await sync();
+   } catch(error) { status(error.message); } finally { $("save").disabled = false; }
+ });
+ async function sync() {
+   const result = await api("/api/sync",{});
+   status(result.processed+" pending action(s) checked.\n"+(result.results||[]).map(r=>r.status+(r.type?" · "+r.type+" · "+r.seconds+" seconds":"")+(r.message?" · "+r.message:"")).join("\n"));
+ }
+ $("sync").addEventListener("click", async () => {
+   try { $("sync").disabled=true; await sync(); } catch(error) { status(error.message); } finally { $("sync").disabled=false; }
+ });
+ if (launch && launch.sessionId && launch.mainToken) sync().catch(error => status("Sync not completed: "+error.message));
+})();
+</script></body></html>
