@@ -13,7 +13,7 @@
 3. Copy .env.example to .env. Set PUBLIC_BASE_URL and CHASTIFY_APP_DEVELOPER_KEY.
 4. Run npm install, then npm start.
 5. Deploy to a Node host with outbound HTTPS and Firebase credentials. Configure environment secrets in the host dashboard; do not commit them.
-6. Set the deployed URL as the Chastify extension iframe URL and test on a non-production lock.
+6. Set the deployed URL as both the main iframe URL and setup iframe URL for the Chastify extension, then test on a non-production lock. The setup view acknowledges Chastify's setup handshake; Obedience mapping is currently configured from the installed extension's runtime view.
 7. Open the extension from Chastify, enter the Obedience extension ID and secret, load options, select reward/punishment mappings and minutes, then save.
 8. Trigger a test event and open the extension to sync the queued action.
 
