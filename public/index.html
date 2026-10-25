@@ -33,12 +33,16 @@
  let launch = null;
  function decodeLaunch() {
    const hash = location.hash.replace(/^#/, "");
-   const params = new URLSearchParams(hash);
-   let raw = params.get("payload") || params.get("launch") || params.get("data");
-   if (!raw && hash.startsWith("{")) raw = hash;
-   if (!raw) return null;
-   try { return JSON.parse(raw); } catch (_) {}
-   try { const normalized = raw.replace(/-/g, "+").replace(/_/g, "/"); return JSON.parse(decodeURIComponent(escape(atob(normalized)))); } catch (_) { return null; }
+   if (!hash) return null;
+   // Chastify's documented iframe payload is URI-encoded JSON in the whole fragment.
+   try { return JSON.parse(decodeURIComponent(hash)); } catch (_) {}
+   // Also accept a plain JSON fragment for local development.
+   try { return JSON.parse(hash); } catch (_) {}
+   // Compatibility fallback for base64url launch payloads used by some wrappers.
+   try {
+     const normalized = hash.replace(/-/g, "+").replace(/_/g, "/");
+     return JSON.parse(decodeURIComponent(escape(atob(normalized))));
+   } catch (_) { return null; }
  }
  function status(message) { $("status").textContent = message; }
  function authBody() {
