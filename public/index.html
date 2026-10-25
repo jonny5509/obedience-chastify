@@ -60,8 +60,30 @@
    for (const item of items) select.add(new Option(item.name || item.id, item.id));
  }
  launch = decodeLaunch();
- $("launchStatus").textContent = launch && launch.sessionId && launch.mainToken ? "Chastify launch context found. Open this extension from an active lock." : "No launch context found. Open this page from inside Chastify to configure it.";
- if (!launch || !launch.sessionId || !launch.mainToken) {
+ const setupMode = Boolean(launch && launch.mode === "setup");
+ $("launchStatus").textContent = setupMode
+   ? "Setup mode detected. Install the extension on a test lock, then open its runtime page to connect Obedience and save reward/punishment mappings."
+   : (launch && launch.sessionId && launch.mainToken ? "Chastify launch context found. Open this extension from an active lock." : "No launch context found. Open this page from inside Chastify to configure it.");
+ if (setupMode) {
+   $("settings").hidden = true;
+   $("sync").hidden = true;
+   $("status").textContent = "Setup is ready. Configure the Obedience connection from the installed extension's runtime page.";
+   const nonce = launch.bridge && launch.bridge.nonce;
+   const parentOrigin = launch.bridge && launch.bridge.parentOrigin;
+   if (nonce && parentOrigin) {
+     let setupConfig = {};
+     window.addEventListener("message", event => {
+       if (event.source !== window.parent || event.origin !== parentOrigin) return;
+       const msg = event.data;
+       if (!msg || msg.nonce !== nonce) return;
+       if (msg.type === "chastify:ext:setup:init") setupConfig = msg.config || {};
+       if (msg.type === "chastify:ext:setup:get_config") {
+         window.parent.postMessage({type:"chastify:ext:setup:config",v:1,nonce,config:setupConfig},parentOrigin);
+       }
+     });
+     window.parent.postMessage({type:"chastify:ext:setup:ready",v:1,nonce},parentOrigin);
+   }
+ } else if (!launch || !launch.sessionId || !launch.mainToken) {
    $("settings").querySelectorAll("input,select,button").forEach(el => el.disabled = true); $("sync").disabled = true;
  }
  $("loadOptions").addEventListener("click", async () => {
