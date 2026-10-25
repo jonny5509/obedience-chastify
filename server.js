@@ -206,7 +206,13 @@ app.post("/api/sync", async (req, res) => {
         results.push({ status: "rejected", message: "Invalid time amount." });
         continue;
       }
-      await doc.ref.update({ status: "processing", startedAt: admin.firestore.FieldValue.serverTimestamp() });
+      const claimed = await db.runTransaction(async (transaction) => {
+        const current = await transaction.get(doc.ref);
+        if (!current.exists || current.data().status !== "pending") return false;
+        transaction.update(doc.ref, { status: "processing", startedAt: admin.firestore.FieldValue.serverTimestamp() });
+        return true;
+      });
+      if (!claimed) continue;
       try {
         const actionName = action.type === "reward" ? "remove_time" : "add_time";
         await chastifyRequest(sessionId, mainToken, "/action", "POST", { name: actionName, params: seconds });
